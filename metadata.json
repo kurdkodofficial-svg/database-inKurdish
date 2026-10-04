@@ -1,0 +1,6 @@
+{
+  "name": "ماجیک (Magic) - بنکەی داتا بێ کۆد بە زمانی کوردی",
+  "description": "پلاتفۆرمی پێشکەوتووی بنکەی داتا بێ کۆدنوسین بە پشتگیری تەواوی زاراوەکانی کوردی، بریکاری AI، فرە-دراوی دۆلار و دینار، و دابەزاندنی تەواوی پڕۆژەکە وەک فایلی ZIP بۆ گیت هەب.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

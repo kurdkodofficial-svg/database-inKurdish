@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SheetModel, Dialect, FieldDefinition, SheetRecord } from '../types';
 import { getFieldName, getUIText } from '../data/translations';
 import { ClientFormulaEngine } from '../lib/formulaEngine';
@@ -15,7 +15,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  Sparkles
+  Sparkles,
+  X
 } from 'lucide-react';
 
 interface SpreadsheetViewProps {
@@ -38,12 +39,18 @@ export const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({
   exchangeRate,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
   const [showAddColumnModal, setShowAddColumnModal] = useState(false);
   const [newColName, setNewColName] = useState('');
   const [newColType, setNewColType] = useState<FieldDefinition['type']>('TEXT');
   const [newColFormula, setNewColFormula] = useState('');
 
   const currentSheet = sheets.find((s) => s.id === activeSheetId) || sheets[0];
+
+  // Reset selected records when switching sheets
+  useEffect(() => {
+    setSelectedRecordIds(new Set());
+  }, [activeSheetId]);
 
   // Quick helper to get customer names for Link & Load
   const customerSheet = sheets.find((s) => s.id === 'sheet_customers');
@@ -104,11 +111,42 @@ export const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({
     });
   };
 
-  // Delete a record
+  // Delete a single record
   const handleDeleteRow = (recordId: string) => {
+    if (selectedRecordIds.has(recordId)) {
+      setSelectedRecordIds((prev) => {
+        const next = new Set(prev);
+        next.delete(recordId);
+        return next;
+      });
+    }
     onUpdateSheet({
       ...currentSheet,
       records: currentSheet.records.filter((r) => r.id !== recordId),
+    });
+  };
+
+  // Bulk delete selected records
+  const handleBulkDelete = () => {
+    if (selectedRecordIds.size === 0) return;
+    const remainingRecords = currentSheet.records.filter((r) => !selectedRecordIds.has(r.id));
+    onUpdateSheet({
+      ...currentSheet,
+      records: remainingRecords,
+    });
+    setSelectedRecordIds(new Set());
+  };
+
+  // Toggle selection for a single row
+  const handleToggleSelectRow = (recordId: string) => {
+    setSelectedRecordIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(recordId)) {
+        next.delete(recordId);
+      } else {
+        next.add(recordId);
+      }
+      return next;
     });
   };
 
@@ -168,6 +206,27 @@ export const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({
   // Calculate totals for currency columns
   const sumTotalUsd = filteredRecords.reduce((acc, r) => acc + (Number(r.total_usd) || Number(r.price_usd) || 0), 0);
   const sumTotalIqd = filteredRecords.reduce((acc, r) => acc + (Number(r.total_iqd) || 0), 0);
+
+  // Master selection helpers
+  const isAllSelected = filteredRecords.length > 0 && filteredRecords.every((r) => selectedRecordIds.has(r.id));
+  const isSomeSelected = filteredRecords.some((r) => selectedRecordIds.has(r.id)) && !isAllSelected;
+
+  const handleToggleSelectAll = () => {
+    if (filteredRecords.length === 0) return;
+    if (isAllSelected) {
+      setSelectedRecordIds((prev) => {
+        const next = new Set(prev);
+        filteredRecords.forEach((r) => next.delete(r.id));
+        return next;
+      });
+    } else {
+      setSelectedRecordIds((prev) => {
+        const next = new Set(prev);
+        filteredRecords.forEach((r) => next.add(r.id));
+        return next;
+      });
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -268,12 +327,63 @@ export const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({
         </div>
       </div>
 
+      {/* Bulk Action Toolbar */}
+      {selectedRecordIds.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-indigo-950/90 via-slate-900 to-indigo-950/90 border border-indigo-500/50 p-3 px-4 rounded-2xl shadow-xl shadow-indigo-950/40">
+          <div className="flex items-center gap-3">
+            <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-indigo-600 text-xs font-bold text-white shadow-sm">
+              {selectedRecordIds.size}
+            </span>
+            <div className="text-xs">
+              <span className="font-bold text-white">
+                {selectedRecordIds.size} تۆمار دیاریکراوە
+              </span>
+              <span className="text-slate-400 mr-2 text-[11px] hidden sm:inline">
+                (لە کۆی {filteredRecords.length} تۆمار)
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBulkDelete}
+              className="flex items-center gap-1.5 bg-red-600 hover:bg-red-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-md shadow-red-600/30 transition-all cursor-pointer"
+              title="سڕینەوەی هەموو تۆمارە دیاریکراوەکان"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>سڕینەوەی دیاریکراوەکان ({selectedRecordIds.size})</span>
+            </button>
+
+            <button
+              onClick={() => setSelectedRecordIds(new Set())}
+              className="flex items-center gap-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 px-2.5 py-1.5 rounded-xl text-xs transition-colors cursor-pointer"
+              title="لابردنی دیاریکردن"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>لابردن</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Interactive Spreadsheet Grid Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
         <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
           <table className="w-full text-right border-collapse select-text">
             <thead className="sticky top-0 z-20 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800 text-slate-300 text-xs font-bold">
               <tr>
+                <th className="p-3 w-10 text-center border-l border-slate-800/80">
+                  <input
+                    type="checkbox"
+                    aria-label="دیاریکردنی هەموو تۆمارەکان"
+                    className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-950 accent-indigo-500 cursor-pointer"
+                    checked={isAllSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = isSomeSelected;
+                    }}
+                    onChange={handleToggleSelectAll}
+                  />
+                </th>
                 <th className="p-3 w-12 text-center border-l border-slate-800/80 text-slate-500 font-mono">
                   #
                 </th>
@@ -302,14 +412,29 @@ export const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-xs">
-              {filteredRecords.map((row, index) => (
-                <tr
-                  key={row.id}
-                  className="hover:bg-slate-800/40 transition-colors group"
-                >
-                  <td className="p-2.5 text-center text-slate-500 font-mono border-l border-slate-800/60">
-                    {index + 1}
-                  </td>
+              {filteredRecords.map((row, index) => {
+                const isSelected = selectedRecordIds.has(row.id);
+                return (
+                  <tr
+                    key={row.id}
+                    className={`transition-colors group ${
+                      isSelected
+                        ? 'bg-indigo-950/40 hover:bg-indigo-900/50'
+                        : 'hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <td className="p-2.5 text-center border-l border-slate-800/60">
+                      <input
+                        type="checkbox"
+                        aria-label={`دیاریکردنی تۆماری ${index + 1}`}
+                        className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-950 accent-indigo-500 cursor-pointer"
+                        checked={isSelected}
+                        onChange={() => handleToggleSelectRow(row.id)}
+                      />
+                    </td>
+                    <td className="p-2.5 text-center text-slate-500 font-mono border-l border-slate-800/60">
+                      {index + 1}
+                    </td>
 
                   {currentSheet.fields.map((col) => {
                     const cellVal = row[col.key];
@@ -429,7 +554,8 @@ export const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({
                     </button>
                   </td>
                 </tr>
-              ))}
+              );
+            })}
             </tbody>
           </table>
         </div>
